@@ -73,10 +73,11 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
 
     particle_t           * ALIGNED(32)  p_ = p;
     //for(;n;n--,p++) {
-    for(int i = 0; i < n; i++, p_++) {
-        float dx   = p[i].dx;                             // Load position
-        float dy   = p[i].dy;
-        float dz   = p[i].dz;
+    for(int i = 0; i < n; i++, p_++)
+    {
+        float dx = p[i].dx;                             // Load position
+        float dy = p[i].dy;
+        float dz = p[i].dz;
         int ii   = p[i].i;
 
         // Interpolate E
@@ -94,10 +95,13 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
         float ux   = p[i].ux;                             // Load momentum
         float uy   = p[i].uy;
         float uz   = p[i].uz;
-        float q    = p[i].w;
         ux  += hax;                               // Half advance E
         uy  += hay;
         uz  += haz;
+        //p[i].ux  += hax;                               // Half advance E
+        //p[i].uy  += hay;
+        //p[i].uz  += haz;
+
         float v0   = qdt_2mc/sqrtf(one + (ux*ux + (uy*uy + uz*uz)));
         /**/                                      // Boris - scalars
         float v1   = cbx*cbx + (cby*cby + cbz*cbz);
@@ -117,7 +121,19 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
         p[i].ux = ux;                               // Store momentum
         p[i].uy = uy;
         p[i].uz = uz;
-        v0   = one/sqrtf(one + (ux*ux+ (uy*uy + uz*uz)));
+    }
+    for(int i = 0; i < n; i++, p_++)
+    {
+        // Reload ux
+        float ux   = p[i].ux;                             // Load momentum
+        float uy   = p[i].uy;
+        float uz   = p[i].uz;
+
+        // Reload dx
+        float dx   = p[i].dx;                             // Load position
+        float dy   = p[i].dy;
+        float dz   = p[i].dz;
+        float v0   = one/sqrtf(one + (ux*ux+ (uy*uy + uz*uz)));
         /**/                                      // Get norm displacement
         ux  *= cdt_dx;
         uy  *= cdt_dy;
@@ -126,10 +142,10 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
         uy  *= v0;
         uz  *= v0;
         v0   = dx + ux;                           // Streak midpoint (inbnds)
-        v1   = dy + uy;
-        v2   = dz + uz;
-        v3   = v0 + ux;                           // New position
-        v4   = v1 + uy;
+        float v1   = dy + uy;
+        float v2   = dz + uz;
+        float v3   = v0 + ux;                           // New position
+        float v4   = v1 + uy;
         float v5   = v2 + uz;
 
         // FIXME-KJB: COULD SHORT CIRCUIT ACCUMULATION IN THE CASE WHERE QSP==0!
@@ -140,6 +156,7 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
             // the total physical charge that passed through the appropriate
             // current quadrant in a time-step
 
+            float q  = p[i].w;
             q *= qsp;
             p[i].dx = v3;                             // Store new position
             p[i].dy = v4;
@@ -150,6 +167,7 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
             v5 = q*ux*uy*uz*one_third;              // Compute correction
 
             // Get accumulator
+            int ii   = p[i].i;
             float* ALIGNED(16) a = (float *)( a0 + ii );
 
 #     define ACCUMULATE_J(X,Y,Z,offset)                                 \
