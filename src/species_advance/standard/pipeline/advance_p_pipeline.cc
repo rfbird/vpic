@@ -38,9 +38,7 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
     const float one_third      = 1./3.;
     const float two_fifteenths = 2./15.;
 
-    int itmp, n, nm, max_nm;
-
-    DECLARE_ALIGNED_ARRAY( particle_mover_t, 16, local_pm, 1 );
+    int itmp, n, max_nm;
 
     // Determine which quads of particles quads this pipeline processes
 
@@ -59,7 +57,9 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
     DISTRIBUTE( max_nm, 8, pipeline_rank, n_pipeline, itmp, max_nm );
     if( pipeline_rank==n_pipeline ) max_nm = args->max_nm - itmp;
     pm   = args->pm + itmp;
-    nm   = 0;
+
+    // TODO: these are not thread safe
+    int nm   = 0;
     int ignore = 0;
 
     // Determine which accumulator array to use
@@ -199,6 +199,7 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
         }
         else
         {                                    // Unlikely
+            DECLARE_ALIGNED_ARRAY( particle_mover_t, 16, local_pm, 1 );
             local_pm->dispx = ux;
             local_pm->dispy = uy;
             local_pm->dispz = uz;
