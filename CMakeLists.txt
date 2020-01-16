@@ -114,6 +114,13 @@ if(NOT SET_MIN_NUM_PARTICLES STREQUAL "AUTO")
     add_definitions(-DMIN_NP=${SET_MIN_NUM_PARTICLES})
 endif()
 
+# Add raja includes
+INCLUDE_DIRECTORIES(${RAJA_DIR}/include/)
+LINK_DIRECTORIES(${RAJA_DIR}/lib)
+set(VPIC_CXX_LIBRARIES "${VPIC_CXX_LIBRARIES} -I${RAJA_DIR}/include/")
+set(VPIC_CXX_LIBRARIES "${VPIC_CXX_LIBRARIES} -L${RAJA_DIR}/lib")
+set(VPIC_CXX_LIBRARIES "${VPIC_CXX_LIBRARIES} -lRAJA")
+
 #------------------------------------------------------------------------------#
 # OpenSSL
 #------------------------------------------------------------------------------#
@@ -353,7 +360,7 @@ else()
   install(TARGETS vpic LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)
 endif()
 target_include_directories(vpic INTERFACE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(vpic ${VPIC_EXPOSE} ${MPI_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${OPENSSL_LIBRARIES} ${CMAKE_DL_LIBS})
+target_link_libraries(vpic ${VPIC_EXPOSE} ${MPI_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${OPENSSL_LIBRARIES} ${CMAKE_DL_LIBS}, RAJA)
 target_compile_options(vpic ${VPIC_EXPOSE} ${MPI_C_COMPILE_FLAGS})
 
 macro(build_a_vpic name deck)

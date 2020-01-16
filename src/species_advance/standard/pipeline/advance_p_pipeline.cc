@@ -11,6 +11,8 @@
 
 #include "../../../util/pipelines/pipelines_exec.h"
 
+#include "RAJA/RAJA.hpp"
+
 //----------------------------------------------------------------------------//
 // Reference implementation for an advance_p pipeline function which does not
 // make use of explicit calls to vector intrinsic functions.
@@ -38,9 +40,7 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
     const float one_third      = 1./3.;
     const float two_fifteenths = 2./15.;
 
-    int itmp, n, nm, max_nm;
-
-    DECLARE_ALIGNED_ARRAY( particle_mover_t, 16, local_pm, 1 );
+    int itmp, n, max_nm;
 
     // Determine which quads of particles quads this pipeline processes
 
@@ -59,7 +59,9 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
     DISTRIBUTE( max_nm, 8, pipeline_rank, n_pipeline, itmp, max_nm );
     if( pipeline_rank==n_pipeline ) max_nm = args->max_nm - itmp;
     pm   = args->pm + itmp;
-    nm   = 0;
+
+    // TODO: these are not very thread safe
+    int* nm = new int[1]; *nm  = 0;
     int ignore = 0;
 
     // Determine which accumulator array to use
@@ -71,9 +73,26 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
 
     // Process particles for this pipeline
 
+    using namespace RAJA::statement; // holds For and Lamda
+    using fused_exec = RAJA::KernelPolicy<
+      For<0, RAJA::loop_exec,
+        Lambda<0>, // kernel 1
+        Lambda<1>  // kernel 2
+      >
+    >;
+
     particle_t           * ALIGNED(32)  p_ = p;
     //for(;n;n--,p++) {
-    for(int i = 0; i < n; i++, p_++)
+    //for(int i = 0; i < n; i++)
+  RAJA::kernel_param<fused_exec>(
+  //RAJA::make_tuple(RAJA::RangeSegment(0, n)),
+  //RAJA::RangeSegment(0, n),
+  RAJA::make_tuple(RAJA::RangeSegment(0, n)),
+  RAJA::tuple<>(),
+  //RAJA::tuple(),
+  [=] RAJA_DEVICE (
+      std::ptrdiff_t i
+      )
     {
         float dx = p[i].dx;                             // Load position
         float dy = p[i].dy;
@@ -121,8 +140,12 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
         p[i].ux = ux;                               // Store momentum
         p[i].uy = uy;
         p[i].uz = uz;
-    }
-    for(int i = 0; i < n; i++, p_++)
+    },
+
+  [=] RAJA_DEVICE (
+      std::ptrdiff_t i
+      )
+    //for(int i = 0; i < n; i++)
     {
         // Reload ux
         float ux   = p[i].ux;                             // Load momentum
@@ -185,10 +208,15 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
             v1 -= v5;       /* v1 = q ux [ (1+dy)(1-dz) - uy*uz/3 ] */        \
             v2 -= v5;       /* v2 = q ux [ (1-dy)(1+dz) - uy*uz/3 ] */        \
             v3 += v5;       /* v3 = q ux [ (1+dy)(1+dz) + uy*uz/3 ] */        \
-            a[offset+0] += v0;                                                \
-            a[offset+1] += v1;                                                \
-            a[offset+2] += v2;                                                \
-            a[offset+3] += v3
+            RAJA::atomicAdd< RAJA::omp_atomic >( &a[offset+0 ], v0); \
+            RAJA::atomicAdd< RAJA::omp_atomic >( &a[offset+1 ], v1); \
+            RAJA::atomicAdd< RAJA::omp_atomic >( &a[offset+2 ], v2); \
+            RAJA::atomicAdd< RAJA::omp_atomic >( &a[offset+3 ], v3)
+
+            //a[offset+0] += v0;
+            //a[offset+1] += v1;
+            //a[offset+2] += v2;
+            //a[offset+3] += v3
 
             ACCUMULATE_J( x,y,z, 0 );
             ACCUMULATE_J( y,z,x, 4 );
@@ -199,6 +227,7 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
         }
         else
         {                                    // Unlikely
+            DECLARE_ALIGNED_ARRAY( particle_mover_t, 16, local_pm, 1 );
             local_pm->dispx = ux;
             local_pm->dispy = uy;
             local_pm->dispz = uz;
@@ -207,20 +236,22 @@ advance_p_pipeline_scalar( advance_p_pipeline_args_t * args,
             local_pm->i = i + itmp; //p_ - p0;
 
             if( move_p( p0, local_pm, a0, g, qsp ) ) { // Unlikely
-                if( nm<max_nm ) {
-                    pm[nm++] = local_pm[0];
+                if( *nm<max_nm ) {
+                    int local_nm = RAJA::atomicAdd< RAJA::omp_atomic >(nm, 1);
+                    pm[local_nm++] = local_pm[0];
                 }
                 else {
-                    ignore++;                 // Unlikely
+                    //ignore++;                 // Unlikely
                 } // if
             } // if
         }
 
     }
+  );
 
     args->seg[pipeline_rank].pm        = pm;
     args->seg[pipeline_rank].max_nm    = max_nm;
-    args->seg[pipeline_rank].nm        = nm;
+    args->seg[pipeline_rank].nm        = *nm;
     args->seg[pipeline_rank].n_ignored = ignore;
 }
 

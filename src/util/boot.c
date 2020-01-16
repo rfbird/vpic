@@ -53,7 +53,7 @@ boot_services( int * pargc,
 
   if (_world_rank == 0)
   {
-      printf("Booting with %d threads and %d (MPI) ranks \n", thread.n_pipeline, _world_size);
+      //printf("Booting with %d threads and %d (MPI) ranks \n", thread.n_pipeline, _world_size);
   }
 }
 
